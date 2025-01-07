@@ -1,0 +1,64 @@
+It is possible for the replica to lose synchronization with the master for various reasons. If monitoring is not active, you can validate this using the MySQL CLI with the command SHOW REPLICA STATUS\G;.
+
+The first two parameters to be observed are as follows:
+
+- Replica_IO_Running
+- Replica_SQL_Running
+
+Under normal operation, they should have the value 'YES'. If there is an issue, the value will be 'NO' in one or both parameters.
+
+To continue debugging, check the following fields:
+
+- Last_IO_Errno:
+- Last_IO_Error:
+
+The first provides the error number, and the second contains details about the error itself:
+
+Example:
+Last_IO_Errno: 13114  
+Last_IO_Error: Got fatal error 1236 from source when reading data from binary log: 'Cannot replicate because the source purged required binary logs. /
+Replicate the missing transactions from elsewhere, or provision a new replica from backup. Consider increasing the source's binary log expiration period. /
+The GTID set sent by the replica is '4276e513-d278-11ee-85b0-560004c75a77:1-3849, 63f976a2-d276-11ee-8b17-560004c75a76:1-177002', and the missing transactions are '8770e60b-0b42-11e8-a5aa-5600015ce96a:1-140163247''
+
+In the error above, the replica is trying to retrieve transaction data that is no longer available on the master. In some cases, it is possible to restart synchronization, while in others, it is faster to restore the replica.
+
+
+RESTORING THE REPLICA
+To recover the replica's state if no other alternatives are available:
+
+1 - Perform a new backup on the master server with GTID data included:
+
+#mysqldump -u root -p --all-databases --triggers --routines --events --source-data=2 --set-gtid-purged=ON > backup.sql
+
+2 - Copy the generated file to the replica.
+
+3 - On the replica, using the MySQL CLI, execute the following commands:
+
+>STOP REPLICA;
+>RESET MASTER;
+>RESET REPLICA ALL;
+
+4 - Delete the production databases (only these) by running:
+
+>DROP DATABASE <database_name>;
+
+5 - Restore all databases using the recently created backup.sql file:
+
+#mysql -u root -p < backup.sql
+
+6 - After the restore is completed, open the MySQL CLI and input the commands:
+
+>CHANGE MASTER TO MASTER_HOST='x.x.x.x',
+>MASTER_USER='replication_user',
+>MASTER_PASSWORD='replication_user password',
+>MASTER_AUTO_POSITION=1;
+>START SLAVE;
+
+7 - Input the command below to follow the replication process.
+
+>SHOW SLAVE STATUS\G;
+
+If all is well, you will see these values:
+
+- Slave_IO_Running: YES
+- Slave_SQL_Running: YES
